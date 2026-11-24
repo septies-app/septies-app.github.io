@@ -140,6 +140,16 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 #splash .sp-ref{display:block;font-style:normal;font-variant:small-caps;letter-spacing:.06em;color:var(--rubric);font-size:.9rem;margin-top:.4rem}
 @keyframes spIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){#splash *{animation:none!important;opacity:1!important}#splash{transition:none}}
+
+/* Lectura en voz alta */
+#ttsBar{position:fixed;right:max(1rem,calc(50vw - 20rem + 1rem));bottom:calc(env(safe-area-inset-bottom,0px) + 1rem);z-index:20;display:flex;gap:.15rem;align-items:center;background:var(--sheet);border:1px solid var(--rule);border-radius:999px;padding:.25rem .45rem;box-shadow:0 4px 18px rgba(0,0,0,.14)}
+#ttsBar[hidden]{display:none}
+#ttsBar button{background:none;border:0;min-width:2.6rem;height:2.6rem;border-radius:999px;cursor:pointer;color:var(--ink);font-size:1.05em}
+#ttsBar button:hover{background:var(--chip)}
+#ttsRate{font-size:.85em!important;color:var(--muted)!important}
+#ttsBtn{position:fixed;right:max(1rem,calc(50vw - 20rem + 1rem));bottom:calc(env(safe-area-inset-bottom,0px) + 1rem);z-index:20;width:3.4rem;height:3.4rem;border-radius:50%;border:1px solid var(--rule);background:var(--sheet);color:var(--rubric);box-shadow:0 4px 18px rgba(0,0,0,.16);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+#ttsBtn.on,#ttsBtn[hidden]{display:none}
+.tts-on{background:var(--chip);border-radius:6px;box-shadow:0 0 0 .35rem var(--chip)}
 </style>
 </head>
 <body>
@@ -152,7 +162,7 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
     <button class="date" id="dateBtn" aria-label="Abrir calendario"></button>
     <button id="todayBtn">Hoy</button>
     <button id="next" aria-label="Día siguiente">›</button>
-    <button id="setBtn" aria-label="Ajustes">⚙︎</button>
+    <button id="setBtn" aria-label="Ajustes" title="Ajustes"><svg viewBox="0 0 24 24" width="1.3em" height="1.3em" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="vertical-align:-.25em"><path d="M6 4v16M12 4v16M18 4v16"/><rect x="3.6" y="13" width="4.8" height="3.4" rx="1" fill="var(--paper)"/><rect x="9.6" y="6.5" width="4.8" height="3.4" rx="1" fill="var(--paper)"/><rect x="15.6" y="10.5" width="4.8" height="3.4" rx="1" fill="var(--paper)"/></svg></button>
   </div>
   <h1 id="title"></h1>
   <p class="meta" id="meta"></p>
@@ -164,6 +174,14 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 </section>
 <nav class="tabs" id="tabs" role="tablist"></nav>
 <article id="hour"></article>
+</div>
+<button id="ttsBtn" aria-label="Escuchar la hora" title="Escuchar"><svg viewBox="0 0 24 24" width="1.45em" height="1.45em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
+<div id="ttsBar" hidden>
+  <button id="ttsPrev" aria-label="Párrafo anterior">⏮︎</button>
+  <button id="ttsPlay" aria-label="Pausa">⏸︎</button>
+  <button id="ttsNext" aria-label="Párrafo siguiente">⏭︎</button>
+  <button id="ttsRate" aria-label="Velocidad">1×</button>
+  <button id="ttsStop" aria-label="Detener">✕</button>
 </div>
 
 <dialog id="monthDlg">
@@ -188,6 +206,10 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
   <h4>Lectura</h4>
   <div class="row"><label for="fs">Tamaño del texto</label><input type="range" id="fs" min="15" max="26" step="1"></div>
   <div class="row"><label for="showKeys">Mostrar claves de los textos</label><input type="checkbox" id="showKeys"></div>
+  <h4>Escuchar</h4>
+  <div class="row"><label for="ttsVoice">Voz</label><select id="ttsVoice"><option value="">Automática (español)</option></select></div>
+  <div class="row"><label for="ttsRubricas">Leer también las rúbricas</label><input type="checkbox" id="ttsRubricas"></div>
+  <p class="hint">Usa las voces del propio dispositivo. Durante la lectura, toque un párrafo para continuar desde ahí.</p>
 </dialog>
 
 <script src="calendarios.js"></script>
@@ -1523,6 +1545,7 @@ function render() {
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { hour = b.dataset.h; render(); });
   const act = $('#tabs').querySelector('[aria-selected="true"]'); if (act) act.scrollIntoView({ block: 'nearest', inline: 'center' });
   renderHour();
+  if (window.TTSAPI) window.TTSAPI.check();
 }
 
 // ---------- mes ----------
@@ -1564,7 +1587,7 @@ function regionNote() {
 }
 function openSettings() {
   fillRegions(); $('#region').value = S.region; ['epiSun', 'ascSun', 'corpusSun', 'usarComun', 'showKeys'].forEach(k => $('#' + k).checked = !!S[k]);
-  $('#fs').value = S.fs; $('#ciclo').value = S.ciclo; regionNote(); $('#setDlg').showModal();
+  $('#fs').value = S.fs; $('#ciclo').value = S.ciclo; $('#ttsRubricas').checked = !!S.ttsRubricas; if (window.TTSAPI) window.TTSAPI.fillVoices(); regionNote(); $('#setDlg').showModal();
 }
 $('#setBtn').onclick = openSettings;
 $('#sClose').onclick = () => $('#setDlg').close();
@@ -1573,6 +1596,100 @@ $('#region').onchange = e => { S.region = e.target.value; Object.assign(S, prese
 $('#fs').oninput = e => { S.fs = +e.target.value; saveS(); };
 $('#ciclo').onchange = e => { S.ciclo = e.target.value; saveS(); };
 
+
+// ---------- Lectura en voz alta (Web Speech API, voces del dispositivo) ----------
+const TTS = window.TTSAPI = (() => {
+  const syn = window.speechSynthesis;
+  if (!syn || !window.SpeechSynthesisUtterance) { const b = $('#ttsBtn'); if (b) b.hidden = true; return { check() {} }; }
+  let queue = [], pos = 0, on = false, paused = false, key = '', gen = 0;
+  const RATES = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
+  const voices = () => syn.getVoices().filter(v => /^es\b/i.test(v.lang));
+  function pickVoice() {
+    const vs = voices(); if (!vs.length) return null;
+    return vs.find(v => v.voiceURI === S.ttsVoice) || vs.find(v => /es[-_]ES/i.test(v.lang) && v.localService) || vs.find(v => /es[-_]ES/i.test(v.lang)) || vs[0];
+  }
+  function fillVoices() {
+    const sel = $('#ttsVoice'); if (!sel) return;
+    sel.innerHTML = '<option value="">Automática (español)</option>' + voices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} · ${esc(v.lang)}${v.localService ? '' : ' (en línea)'}</option>`).join('');
+    sel.value = S.ttsVoice || '';
+  }
+  syn.addEventListener && syn.addEventListener('voiceschanged', fillVoices); fillVoices();
+  const INSTR = /^(Si |Cuando |Donde |En los lugares|Se dice|Se omite|Se toma|Las antífonas|Los salmos|La oración|Todo como|O bien|Después del|Salmodia|Antífonas|Himno|El salmo|Y a continuación|Terminada|Al final|También puede|Puede|Hoy no|Del común|Del propio|Como en|Oración como)/i;
+  const isReading = t => /^(R\.|V\.)/.test(t) || /^(Comienza|Del?\s|De la |De los |De las |Lectura|Sermón|Homilía)/.test(t);
+  function collect() {
+    const els = [...$('#hour').querySelectorAll('h2,p,.lab,.ps-title,.ps-sub')].filter(e => {
+      if (!e.offsetParent || e.closest('[hidden],.alt-tabs,.src,.note,.keys,.hint')) return false;
+      if (e.querySelector('p')) return false;
+      const t = e.textContent.trim(); if (!t) return false;
+      if (!S.ttsRubricas && e.classList.contains('rb') && (INSTR.test(t) || !isReading(t))) return false;
+      return true;
+    });
+    return els;
+  }
+  function clean(t) {
+    t = t.replace(/(^|\n)\s*(V\.|R\.)\s*/g, '$1');
+    if (t === t.toUpperCase() && /[A-ZÁÉÍÓÚÑ]{3}/.test(t)) t = t.charAt(0) + t.slice(1).toLowerCase();   // las mayúsculas se deletrean
+    return t.replace(/\s+/g, ' ').replace(/(^|\s)[*†+](?=\s|$)/g, ' ').replace(/^(V\.|R\.)\s*/, '').replace(/^Ant\.\s*(\d\.)?\s*/, '')
+      .replace(/\bSal\b\.?/g, 'Salmo').replace(/\bcf\.\s*/gi, 'confróntese ').trim();
+  }
+  function chunks(t) {   // Chrome corta las frases muy largas: trozos de ~220 caracteres
+    if (t.length <= 220) return [t];
+    const out = []; let cur2 = '';
+    for (const s2 of t.split(/(?<=[.;:!?»])\s+/)) { if ((cur2 + ' ' + s2).length > 220 && cur2) { out.push(cur2); cur2 = s2; } else cur2 = cur2 ? cur2 + ' ' + s2 : s2; }
+    if (cur2) out.push(cur2); return out;
+  }
+  function mark() {
+    document.querySelectorAll('.tts-on').forEach(e => e.classList.remove('tts-on'));
+    const e = queue[pos]; if (!e) return; e.classList.add('tts-on');
+    const r = e.getBoundingClientRect(); if (r.top < 90 || r.bottom > innerHeight - 90) e.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function speakFrom(n) {
+    const g = ++gen; syn.cancel(); pos = n; paused = false; ui();
+    if (pos >= queue.length) { stop(); return; }
+    mark();
+    const parts = chunks(clean(queue[pos].innerText || queue[pos].textContent)); const v = pickVoice();
+    parts.forEach((t, i) => {
+      const u = new SpeechSynthesisUtterance(t); u.lang = v ? v.lang : 'es-ES'; if (v) u.voice = v; u.rate = S.ttsRate || 1;
+      if (i === parts.length - 1) u.onend = () => { if (g === gen && on && !paused) speakFrom(pos + 1); };
+      u.onerror = e => { if (g === gen && on && e.error !== 'interrupted' && e.error !== 'canceled' && i === parts.length - 1) speakFrom(pos + 1); };
+      syn.speak(u);
+    });
+  }
+  function start(from) {
+    queue = collect(); if (!queue.length) return;
+    on = true; key = stateKey(); $('#ttsBar').hidden = false; $('#ttsBtn').classList.add('on');
+    speakFrom(from || 0);
+  }
+  function stop() {
+    on = false; paused = false; gen++; syn.cancel(); $('#ttsBar').hidden = true; $('#ttsBtn').classList.remove('on');
+    document.querySelectorAll('.tts-on').forEach(e => e.classList.remove('tts-on'));
+  }
+  function ui() { $('#ttsPlay').textContent = paused ? '▶︎' : '⏸︎'; $('#ttsPlay').setAttribute('aria-label', paused ? 'Seguir' : 'Pausa'); $('#ttsRate').textContent = String(S.ttsRate || 1).replace('.', ',') + '×'; }
+  const stateKey = () => `${cur}|${hour}|${optId(chosen(getDay(cur)))}`;
+  $('#ttsBtn').onclick = () => on ? stop() : start(0);
+  $('#ttsStop').onclick = stop;
+  $('#ttsPlay').onclick = () => {
+    if (!on) return;
+    if (paused) { paused = false; speakFrom(pos); } else { paused = true; gen++; syn.cancel(); ui(); }
+  };
+  $('#ttsNext').onclick = () => on && speakFrom(Math.min(pos + 1, queue.length - 1));
+  $('#ttsPrev').onclick = () => on && speakFrom(Math.max(pos - 1, 0));
+  $('#ttsRate').onclick = () => { const i = RATES.indexOf(S.ttsRate || 1); S.ttsRate = RATES[(i + 1) % RATES.length]; store.set('settings', S); ui(); if (on && !paused) speakFrom(pos); };
+  $('#hour').addEventListener('click', e => {
+    if (!on || e.target.closest('button,a,.alt-tabs,summary')) return;
+    let el = queue.findIndex(q => q.contains(e.target));
+    if (el < 0) { queue = collect(); el = queue.findIndex(q => q.contains(e.target)); }
+    if (el >= 0) speakFrom(el);
+  });
+  $('#ttsVoice').onchange = e => { S.ttsVoice = e.target.value; store.set('settings', S); };
+  $('#ttsRubricas').onchange = e => { S.ttsRubricas = e.target.checked; store.set('settings', S); };
+  window.addEventListener('pagehide', () => syn.cancel());
+  return {
+    // tras cada render: si cambió el día/la hora/la celebración, se detiene; si no, se reconstruye la cola
+    check() { if (!on) return; if (stateKey() !== key) { stop(); return; } queue = collect(); mark(); },
+    fillVoices
+  };
+})();
 applyFs();
 render();
 (async () => {
