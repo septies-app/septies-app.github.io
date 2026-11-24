@@ -116,6 +116,7 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 .bk i{font-style:normal;color:var(--rubric)}
 .bk a{color:var(--rubric);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;cursor:pointer}
 .bk .ref{border-left:2px solid var(--rule);padding-left:.8rem;margin:.4rem 0 .8rem}
+.bk .ref.auto{border-left:0;padding-left:0;margin:0}
 .bk .alt{font-size:.8em;color:var(--muted);margin:.2rem 0 .6rem}
 .bk .alt button{background:var(--chip);border:0;border-radius:6px;padding:.15rem .5rem;margin:.1rem .2rem;cursor:pointer;color:var(--ink);font-size:1em}
 .bk .alt-tabs{display:flex;flex-wrap:wrap;gap:.3rem;justify-content:center;margin:.2rem 0 .7rem}
@@ -209,7 +210,7 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
   <h4>Escuchar</h4>
   <div class="row"><label for="ttsVoice">Voz</label><select id="ttsVoice"><option value="">Automática (español)</option></select></div>
   <div class="row"><label for="ttsRubricas">Leer también las rúbricas</label><input type="checkbox" id="ttsRubricas"></div>
-  <p class="hint">Usa las voces del propio dispositivo. Durante la lectura, toque un párrafo para continuar desde ahí.</p>
+  <p class="hint">Usa las voces del propio dispositivo. Durante la lectura la pantalla se mantiene encendida (el teléfono corta la voz si se apaga); si se bloquea, al volver continúa desde el mismo párrafo. Toque un párrafo para continuar desde ahí.</p>
 </dialog>
 
 <script src="calendarios.js"></script>
@@ -725,6 +726,14 @@ const secIndex = {};       // vol -> sorted [s,e,key]
 const nrm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 const txt = h => String(h).replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 function load(d) {
+  // Correcciones de etiquetado del libro: un subtítulo tomado por encabezamiento corta el texto del salmo
+  // (p. ej. «Himno de los redimidos» tras Cántico Ap 4, 11…, martes II, Vísperas) o de la lectura.
+  const P = d.p;
+  for (let i = 1; i < P.length; i++) {
+    if (P[i][0] !== 'l') continue;
+    const t = String(P[i][1]).replace(/<[^>]+>/g, '').trim();
+    if (P[i - 1][0] === 'ps' || (P[i][2] === 'concl' && /^CONCLUSIÓN DE (LA|EL|LOS|LAS) /.test(t))) P[i] = ['ti', P[i][1]];
+  }
   vols[d.vol] = d;
   secIndex[d.vol] = Object.entries(d.sec).map(([k, v]) => [v.s, v.e, k]).sort((a, b) => a[0] - b[0]);
 }
@@ -1255,12 +1264,54 @@ function filterReadings(v, idx, key, mode) {
   return out;
 }
 const AUTO_TXT = /benedictus|magn[ií]ficat|nunc dimittis|te deum/i;
+// Gloria al Padre al final de cada salmo y cántico (salvo Dn 3, 57-88, que no lo lleva)
+const GLORIA_HTML = '<p class="v gloria in-ps">Gloria al Padre, y al Hijo, y al Espíritu Santo.<br>Como era en el principio, ahora y siempre,<br>por los siglos de los siglos. Amén.</p>';
+const CANT_EV = /^(Benedictus|Magnificat|Nunc dimittis)\b/i;
+const INSTR_RB = /^(No se dice|Al final de este cántico|La antífona se repite|El versículo Gloria|Los salmos|La lectura breve|La conclusión|En las memorias|O bien|Se (recita|dice|omite|repite|toma)\b)/i;
 function renderIdx(v, idx, ctx, depth) {
   let html = '';
-  for (const i of idx) {
+  const P = BOOK.vols()[v].p;
+  let ps = null, prevK = null;
+  const flush = () => {
+    if (ps && ps.verses >= 4 && !ps.gloria && !ps.no) { const at = ps.at != null ? ps.at : html.length; html = html.slice(0, at) + GLORIA_HTML + html.slice(at); }
+    ps = null;
+  };
+  let markVerse = false;
+  for (let n = 0; n < idx.length; n++) {
+    const i = idx[n], k = P[i][0], t = BOOK.txt(P[i][1]).trim();
+    const header = k === 'ps' || (k === 'v' && CANT_EV.test(t));
+    const antLine = /^(?:[^:]{3,60}:\s*)?Ant\.\s/.test(t) || /^Antífona\s+\d/.test(t);
+    const numeral = /^[IVX]+$/.test(t) && ['v', 't', 'r', 'ti'].includes(k);
+    if (numeral && ps && ps.verses === 0) { /* «I» al empezar el salmo */ }
+    else if (numeral && (ps || prevK === 'a' || /^Ant/.test(BOOK.txt((P[idx[n - 1]] || [])[1] || '').trim()))) { const no = ps && ps.no; flush(); ps = { verses: 0, gloria: false, no: !!no }; }
+    if (ps && (header || antLine || ['a', 'l', 'h', 'hh'].includes(k))) flush();
+    let cls = '';
+    if (header) { ps = { verses: 0, gloria: false, no: /Dn\s*3,\s*57/.test(t) }; cls = 'ps-head'; }
+    else if (ps) {
+      if (/no se dice Gloria/i.test(t)) ps.no = true;
+      if (k === 'ti') cls = 'ps-head';
+      else if (k === 'ep') cls = 'ps-head';
+      else if (ps.verses === 0 && numeral) cls = 'ps-head';
+      else if (ps.verses === 0 && prevK === 'ti' && k === 'v' && /\.$/.test(t) && !/^Aleluya/i.test(t) && P[idx[n + 1]] && P[idx[n + 1]][0] === 'v') cls = 'ps-head';
+      else if (/^Gloria (al|la) Padre\.?$/.test(t)) { prevK = k; continue; }   // «Gloria al Padre.» abreviado: se pone completo
+      else if (['v', 't', 'r'].includes(k) && t) {
+        if (/^Gloria al Padre/.test(t)) ps.gloria = true;
+        else if (k !== 'r' || !INSTR_RB.test(t)) { ps.verses++; markVerse = true; }
+        cls = 'in-ps';
+      }
+    }
+    prevK = k;
     let ph = paraHTML(v, i);
+    if (cls === 'in-ps' && k === 'r' && INSTR_RB.test(t)) cls = '';
+    if (cls) ph = ph.replace(/^<(p|div) class="([^"]*)"/, `<$1 class="$2 ${cls}"`);
     if ((ctx.part === 'l1' || ctx.part === 'l2') && ph.startsWith('<p class="v">')) ph = ph.replace('<p class="v">', '<p class="t">');
-    const raw = BOOK.vols()[v].p[i][1];
+    let raw = BOOK.vols()[v].p[i][1];
+    // Las remisiones al Salterio («Martes de la semana II del Salterio») son sólo indicativas: texto, no enlace
+    const autoFirst = (ctx.part === 'himno' || ctx.part === 'salmodia') && depth === 0;
+    if (/Salterio|>\s*(Ordinario|Propio del Tiempo)/i.test(raw) && !autoFirst) {
+      const unlink = h => h.replace(/<a data-r="\d+"[^>]*>([^<]*?Salterio[^<]*?|\s*(?:Ordinario|Propio del Tiempo)[^<]*?)<\/a>/gi, '$1');
+      raw = unlink(raw); ph = unlink(ph);
+    }
     const links = [...raw.matchAll(/<a data-r="(\d+)">(.*?)<\/a>/g)];
     if (links.length && depth < 3) {
       let autoN = -1;
@@ -1269,16 +1320,28 @@ function renderIdx(v, idx, ctx, depth) {
       if (ctx.part === '_pre' || ctx.part === 'inv') autoN = -1;
       if (ctx.part === 'himno' && /latinos|Apéndice/i.test(BOOK.txt(raw))) autoN = -1;   // himnos latinos: sólo enlace
       ph = ph.replace(/<a data-r="(\d+)">/g, (m, r) => `<a data-r="${r}" data-v="${v}" data-part="${ctx.part || ''}" data-d="${depth + 1}" tabindex="0" role="button">`);
+      // Lo que se abre solo (salmodia del Salterio, Benedictus, Magníficat, Nunc dimittis, Te Deum) queda siempre abierto:
+      // el enlace pasa a texto y no se puede cerrar. Las demás remisiones al Salterio también son sólo texto.
+      const toText = m => { ph = ph.replace(new RegExp(`<a data-r="${m[1]}"[^>]*>[\\s\\S]*?<\\/a>`), m[2]); };
+      if (autoN >= 0 && !(ctx.part === 'himno' && links.length > 1)) {
+        toText(links[autoN]);
+        const lt = BOOK.txt(links[autoN][2]).trim().replace(/[.:]$/, '');
+        if (AUTO_TXT.test(lt) && BOOK.txt(ph).trim().replace(/[.:]$/, '') === lt) ph = '';
+      }
+      links.forEach((m, n) => { if (n !== autoN && /Salterio|^\s*(Ordinario|Propio del Tiempo)\b/i.test(BOOK.txt(m[2]))) toText(m); });
       html += ph;
       if (autoN >= 0) {
         const tgt = +links[autoN][1];
         if (ctx.part === 'himno' && links.length > 1) {
           const ls = [links[autoN], ...links.filter((_, n) => n !== autoN)].slice(0, 3);
           html += altTabs(`hl:${ctx.h}:${v}:${i}`, ls.map(m => ({ label: BOOK.txt(m[2]).replace(/[.,;:]+$/, ''), html: `<div class="ref" data-for="${v}:${m[1]}">${renderRef(v, +m[1], ctx, depth + 1)}</div>` })));
-        } else html += `<div class="ref" data-for="${v}:${tgt}">${renderRef(v, tgt, ctx, depth + 1)}</div>`;
+        } else html += `<div class="ref${AUTO_TXT.test(BOOK.txt(links[autoN][2])) ? ' auto' : ''}" data-for="${v}:${tgt}">${renderRef(v, tgt, ctx, depth + 1)}</div>`;
       }
     } else html += ph;
+    if (markVerse && ps) ps.at = html.length;
+    markVerse = false;
   }
+  flush();
   return html;
 }
 function renderRef(v, tgt, ctx, depth) {
@@ -1602,7 +1665,19 @@ const TTS = window.TTSAPI = (() => {
   const syn = window.speechSynthesis;
   if (!syn || !window.SpeechSynthesisUtterance) { const b = $('#ttsBtn'); if (b) b.hidden = true; return { check() {} }; }
   let queue = [], pos = 0, on = false, paused = false, key = '', gen = 0;
-  const RATES = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
+  // El navegador corta la voz cuando la pantalla se apaga: mientras se lee, la pantalla se mantiene encendida
+  let wake = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !wake && document.visibilityState === 'visible') { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch (e) { wake = null; }
+  }
+  function letSleep() { try { if (wake) wake.release(); } catch (e) {} wake = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !on) return;
+    if (!paused) keepAwake();
+    // si se bloqueó el teléfono, al volver se sigue desde el párrafo en curso
+    if (!paused && !syn.speaking) speakFrom(pos);
+  });
+  if (S.ttsRate !== 0.8) S.ttsRate = 1;   // sólo dos velocidades: 1× y 0,8×
   const voices = () => syn.getVoices().filter(v => /^es\b/i.test(v.lang));
   function pickVoice() {
     const vs = voices(); if (!vs.length) return null;
@@ -1621,6 +1696,8 @@ const TTS = window.TTSAPI = (() => {
       if (!e.offsetParent || e.closest('[hidden],.alt-tabs,.src,.note,.keys,.hint')) return false;
       if (e.querySelector('p')) return false;
       const t = e.textContent.trim(); if (!t) return false;
+      if (e.classList.contains('ps-head')) return false;   // tras la antífona, directamente el texto del salmo
+      if (e.classList.contains('in-ps') && !/^(No se dice|Al final de este cántico)/i.test(t)) return true;
       if (!S.ttsRubricas && e.classList.contains('rb') && (INSTR.test(t) || !isReading(t))) return false;
       return true;
     });
@@ -1657,11 +1734,11 @@ const TTS = window.TTSAPI = (() => {
   }
   function start(from) {
     queue = collect(); if (!queue.length) return;
-    on = true; key = stateKey(); $('#ttsBar').hidden = false; $('#ttsBtn').classList.add('on');
+    on = true; key = stateKey(); $('#ttsBar').hidden = false; $('#ttsBtn').classList.add('on'); keepAwake();
     speakFrom(from || 0);
   }
   function stop() {
-    on = false; paused = false; gen++; syn.cancel(); $('#ttsBar').hidden = true; $('#ttsBtn').classList.remove('on');
+    on = false; paused = false; gen++; syn.cancel(); letSleep(); $('#ttsBar').hidden = true; $('#ttsBtn').classList.remove('on');
     document.querySelectorAll('.tts-on').forEach(e => e.classList.remove('tts-on'));
   }
   function ui() { $('#ttsPlay').textContent = paused ? '▶︎' : '⏸︎'; $('#ttsPlay').setAttribute('aria-label', paused ? 'Seguir' : 'Pausa'); $('#ttsRate').textContent = String(S.ttsRate || 1).replace('.', ',') + '×'; }
@@ -1670,11 +1747,11 @@ const TTS = window.TTSAPI = (() => {
   $('#ttsStop').onclick = stop;
   $('#ttsPlay').onclick = () => {
     if (!on) return;
-    if (paused) { paused = false; speakFrom(pos); } else { paused = true; gen++; syn.cancel(); ui(); }
+    if (paused) { paused = false; keepAwake(); speakFrom(pos); } else { paused = true; gen++; syn.cancel(); letSleep(); ui(); }
   };
   $('#ttsNext').onclick = () => on && speakFrom(Math.min(pos + 1, queue.length - 1));
   $('#ttsPrev').onclick = () => on && speakFrom(Math.max(pos - 1, 0));
-  $('#ttsRate').onclick = () => { const i = RATES.indexOf(S.ttsRate || 1); S.ttsRate = RATES[(i + 1) % RATES.length]; store.set('settings', S); ui(); if (on && !paused) speakFrom(pos); };
+  $('#ttsRate').onclick = () => { S.ttsRate = (S.ttsRate || 1) === 1 ? 0.8 : 1; store.set('settings', S); ui(); if (on && !paused) speakFrom(pos); };
   $('#hour').addEventListener('click', e => {
     if (!on || e.target.closest('button,a,.alt-tabs,summary')) return;
     let el = queue.findIndex(q => q.contains(e.target));
@@ -1683,7 +1760,7 @@ const TTS = window.TTSAPI = (() => {
   });
   $('#ttsVoice').onchange = e => { S.ttsVoice = e.target.value; store.set('settings', S); };
   $('#ttsRubricas').onchange = e => { S.ttsRubricas = e.target.checked; store.set('settings', S); };
-  window.addEventListener('pagehide', () => syn.cancel());
+  window.addEventListener('pagehide', () => { syn.cancel(); });
   return {
     // tras cada render: si cambió el día/la hora/la celebración, se detiene; si no, se reconstruye la cola
     check() { if (!on) return; if (stateKey() !== key) { stop(); return; } queue = collect(); mark(); },
