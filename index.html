@@ -112,6 +112,8 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 .bk .ps{font-weight:600;margin:1rem 0 0;font-size:.95em}
 .bk .ti{font-variant:small-caps;color:var(--muted);font-size:.86em;margin:.15rem 0 .45rem;letter-spacing:.02em}
 .bk .ep{font-style:italic;color:var(--muted);font-size:.85em;margin:0 0 .5rem}
+.bk .ti.ps-head,.bk .ep.ps-head{color:var(--rubric)}
+.bk .resp{margin-left:.3em}.bk .pn{margin-top:.3rem}
 .bk .hd{font-weight:600;text-align:center;margin:1.2rem 0 .4rem}
 .bk i{font-style:normal;color:var(--rubric)}
 .bk a{color:var(--rubric);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;cursor:pointer}
@@ -160,10 +162,8 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 <div class="wrap">
 <header>
   <div class="nav">
-    <button id="prev" aria-label="Día anterior">‹</button>
     <button class="date" id="dateBtn" aria-label="Abrir calendario"></button>
     <button id="todayBtn">Hoy</button>
-    <button id="next" aria-label="Día siguiente">›</button>
     <button id="setBtn" aria-label="Ajustes" title="Ajustes"><svg viewBox="0 0 24 24" width="1.3em" height="1.3em" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="vertical-align:-.25em"><path d="M6 4v16M12 4v16M18 4v16"/><rect x="3.6" y="13" width="4.8" height="3.4" rx="1" fill="var(--paper)"/><rect x="9.6" y="6.5" width="4.8" height="3.4" rx="1" fill="var(--paper)"/><rect x="15.6" y="10.5" width="4.8" height="3.4" rx="1" fill="var(--paper)"/></svg></button>
   </div>
   <h1 id="title"></h1>
@@ -1274,10 +1274,52 @@ const AUTO_TXT = /benedictus|magn[ií]ficat|nunc dimittis|te deum/i;
 const GLORIA_HTML = '<p class="v gloria in-ps">Gloria al Padre, y al Hijo, y al Espíritu Santo.<br>Como era en el principio, ahora y siempre,<br>por los siglos de los siglos. Amén.</p>';
 const CANT_EV = /^(Benedictus|Magnificat|Nunc dimittis)\b/i;
 const INSTR_RB = /^(No se dice|Al final de este cántico|La antífona se repite|El versículo Gloria|Los salmos|La lectura breve|La conclusión|En las memorias|O bien|Se (recita|dice|omite|repite|toma)\b)/i;
+// ---------- Preces: ℟ tras la respuesta y tras cada intención; Padrenuestro completo ----------
+const PN_HTML = '<p class="v pn">Padre nuestro que estás en el cielo, santificado sea tu Nombre; venga a nosotros tu Reino; hágase tu voluntad en la tierra como en el cielo.<br>Danos hoy nuestro pan de cada día; perdona nuestras ofensas, como también nosotros perdonamos a los que nos ofenden; no nos dejes caer en la tentación, y líbranos del mal.</p>';
+const PRECES_RUB = /^(Terminado|En el Oficio|En las solemnidades|En las memorias|Se pueden|Pueden|Puede|Si |Cuando |O bien|Las preces|Del Común|Del Propio|Intenciones libres)/i;
+const DASH = /^[—–-]\s*/;
+function precesPlan(v, idx) {
+  const P = BOOK.vols()[v].p, T = i => BOOK.txt(P[i][1]).trim();
+  const plan = {}, lines = idx.filter(i => P[i][0] !== 'b' && P[i][0] !== 'l' && T(i));
+  let resp = null, k = 0;
+  // introducción: primera línea con «:» (no la del Padrenuestro)
+  for (; k < lines.length; k++) {
+    const t = T(lines[k]);
+    if (/Padre nuestro\.?$/.test(t) || PRECES_RUB.test(t) || t.length < 25) continue;
+    const c = t.lastIndexOf(':'); if (c < 0) continue;
+    const tail = t.slice(c + 1).trim();
+    if (tail && tail.length < 140) { resp = tail.replace(/^R\.\s*/, ''); plan[lines[k]] = { type: 'inline', intro: t.slice(0, c + 1), resp }; k++; break; }
+    if (!tail) {
+      const n1 = lines[k + 1], n2 = lines[k + 2];
+      const r = n1 != null ? T(n1) : '';
+      if (r && !DASH.test(r) && !r.endsWith(':') && r.length < 150 && !(n2 != null && DASH.test(T(n2)))) {
+        resp = r.replace(/^R\.\s*/, ''); plan[n1] = { type: 'resp' }; k += 2;
+      } else k++;
+      break;
+    }
+  }
+  for (; k < lines.length; k++) {
+    const i = lines[k], t = T(i);
+    if (/Padre nuestro\.?$/.test(t)) { plan[i] = { type: /^Padre nuestro\.?$/.test(t) ? 'pn' : 'pnIntro' }; continue; }
+    if (resp && t.replace(/^R\.\s*/, '') === resp) { plan[i] = { type: 'resp' }; continue; }
+    if (resp && DASH.test(t)) plan[i] = { type: 'dash', resp };
+  }
+  return plan;
+}
+const RESP_M = '<span class="r resp-m">℟ </span>';
+function precesPH(ph, pl) {
+  if (pl.type === 'pn') return PN_HTML;
+  if (pl.type === 'pnIntro') return ph.replace(/\s*Padre nuestro\.?\s*(<\/p>)$/, '$1') + PN_HTML;
+  if (pl.type === 'inline') return `<p class="v">${esc(pl.intro)}</p><p class="v">${RESP_M}${esc(pl.resp)}</p>`;
+  if (pl.type === 'resp') return ph.replace(/^(<p class="[^"]*">)(?:<span[^>]*>R\.<\/span>|R\.)?\s*/, '$1' + RESP_M);
+  if (pl.type === 'dash') return ph.replace(/(<\/p>)$/, `<span class="r resp" data-say="${esc(pl.resp)}">℟</span>$1`);
+  return ph;
+}
 function renderIdx(v, idx, ctx, depth) {
   let html = '';
   const P = BOOK.vols()[v].p;
   let ps = null, prevK = null;
+  const pplan = ctx.part === 'preces' ? precesPlan(v, idx) : null;
   const flush = () => {
     if (ps && ps.verses >= 4 && !ps.gloria && !ps.no) { const at = ps.at != null ? ps.at : html.length; html = html.slice(0, at) + GLORIA_HTML + html.slice(at); }
     ps = null;
@@ -1285,7 +1327,7 @@ function renderIdx(v, idx, ctx, depth) {
   let markVerse = false;
   for (let n = 0; n < idx.length; n++) {
     const i = idx[n], k = P[i][0], t = BOOK.txt(P[i][1]).trim();
-    const header = k === 'ps' || (k === 'v' && CANT_EV.test(t));
+    const header = k === 'ps' || ((k === 'v' || k === 'r') && CANT_EV.test(t));
     const antLine = /^(?:[^:]{3,60}:\s*)?Ant\.\s/.test(t) || /^Antífona\s+\d/.test(t);
     const numeral = /^[IVX]+$/.test(t) && ['v', 't', 'r', 'ti'].includes(k);
     if (numeral && ps && ps.verses === 0) { /* «I» al empezar el salmo */ }
@@ -1310,6 +1352,11 @@ function renderIdx(v, idx, ctx, depth) {
     let ph = paraHTML(v, i);
     if (cls === 'in-ps' && k === 'r' && INSTR_RB.test(t)) cls = '';
     if (cls) ph = ph.replace(/^<(p|div) class="([^"]*)"/, `<$1 class="$2 ${cls}"`);
+    if (pplan) {
+      // en las preces, el texto va en negro aunque el libro lo marque como rúbrica
+      if (k === 'r' && !PRECES_RUB.test(t) && !INSTR_RB.test(t)) ph = ph.replace(/^<p class="rb">/, '<p class="v">');
+      if (pplan[i]) ph = precesPH(ph, pplan[i]);
+    }
     if ((ctx.part === 'l1' || ctx.part === 'l2') && ph.startsWith('<p class="v">')) ph = ph.replace('<p class="v">', '<p class="t">');
     let raw = BOOK.vols()[v].p[i][1];
     // Las remisiones al Salterio («Martes de la semana II del Salterio») son sólo indicativas: texto, no enlace
@@ -1642,8 +1689,6 @@ $('#dateBtn').onclick = () => { const [y, m] = LH.ymd(cur); monthCursor = [y, m]
 $('#mPrev').onclick = () => { let [y, m] = monthCursor; m--; if (!m) { m = 12; y--; } monthCursor = [y, m]; renderMonth(); };
 $('#mNext').onclick = () => { let [y, m] = monthCursor; m++; if (m > 12) { m = 1; y++; } monthCursor = [y, m]; renderMonth(); };
 $('#mClose').onclick = () => $('#monthDlg').close();
-$('#prev').onclick = () => { cur -= LH.DAY; render(); };
-$('#next').onclick = () => { cur += LH.DAY; render(); };
 $('#todayBtn').onclick = () => { const n2 = new Date(); cur = LH.D(n2.getFullYear(), n2.getMonth() + 1, n2.getDate()); hour = autoHour(); render(); };
 
 // ---------- ajustes ----------
@@ -1707,7 +1752,7 @@ const TTS = window.TTSAPI = (() => {
       if (!e.offsetParent || e.closest('[hidden],.alt-tabs,.src,.note,.keys,.hint')) return false;
       if (e.querySelector('p')) return false;
       const t = e.textContent.trim(); if (!t) return false;
-      if (e.classList.contains('ps-head')) return false;   // tras la antífona, directamente el texto del salmo
+      if (e.classList.contains('ps-head') || e.classList.contains('ep')) return false;   // tras la antífona, directamente el texto del salmo
       if (e.classList.contains('in-ps') && !/^(No se dice|Al final de este cántico)/i.test(t)) return true;
       if (!S.ttsRubricas && e.classList.contains('rb') && (INSTR.test(t) || !isReading(t))) return false;
       return true;
@@ -1735,7 +1780,10 @@ const TTS = window.TTSAPI = (() => {
     const g = ++gen; syn.cancel(); pos = n; paused = false; ui();
     if (pos >= queue.length) { stop(); return; }
     mark();
-    const parts = chunks(clean(queue[pos].innerText || queue[pos].textContent)); const v = pickVoice();
+    const el = queue[pos], say = el.querySelector('.resp');
+    const parts = chunks(clean((el.innerText || el.textContent).replace(/℟/g, '')));
+    if (say && say.dataset.say) parts.push(...chunks(clean(say.dataset.say)));
+    const v = pickVoice();
     parts.forEach((t, i) => {
       const u = new SpeechSynthesisUtterance(t); u.lang = v ? v.lang : 'es-ES'; if (v) u.voice = v; u.rate = S.ttsRate || 1;
       if (i === parts.length - 1) u.onend = () => { if (g === gen && on && !paused) speakFrom(pos + 1); };
