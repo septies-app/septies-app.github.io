@@ -206,7 +206,6 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
   <p class="hint">Ciclo bienal: primera y segunda lectura del Leccionario bienal bíblico-patrístico (el año I empieza en el Adviento anterior a un año impar; el año II, en el anterior a un año par). Los domingos se ofrece también, como alternativa, la lectura patrística sobre el Evangelio del día.</p>
   <h4>Lectura</h4>
   <div class="row"><label for="fs">Tamaño del texto</label><input type="range" id="fs" min="15" max="26" step="1"></div>
-  <div class="row"><label for="showKeys">Mostrar claves de los textos</label><input type="checkbox" id="showKeys"></div>
   <h4>Escuchar</h4>
   <div class="row"><label for="ttsVoice">Voz</label><select id="ttsVoice"><option value="">Automática (español)</option></select></div>
   <div class="row"><label for="ttsRubricas">Leer también las rúbricas</label><input type="checkbox" id="ttsRubricas"></div>
@@ -1172,6 +1171,7 @@ const store = {
 const PAISES = LH.countries();
 const preset = code => { const t = LH.countryTransfers(code); return t ? { epiSun: t.epiphanyToSunday, ascSun: t.ascensionToSunday, corpusSun: t.corpusToSunday } : { epiSun: false, ascSun: false, corpusSun: false }; };
 let S = Object.assign({ region: 'ES', epiSun: false, ascSun: true, corpusSun: true, usarComun: true, fs: 19, showKeys: false, ciclo: 'anual' }, store.get('settings', {}));
+S.showKeys = false;   // las claves de origen ya no se muestran
 if (S.region === 'es') S.region = 'ES';                       // ajustes de la versión anterior
 if (S.region !== '' && !PAISES[S.region]) S.region = 'ES';
 try { localStorage.removeItem('lh.custom'); } catch {}         // ya no hay celebraciones añadidas por el usuario
@@ -1649,13 +1649,13 @@ function regionNote() {
     : `Calendario propio de ${p.nombre}. Traslados a domingo según su Conferencia Episcopal.`;
 }
 function openSettings() {
-  fillRegions(); $('#region').value = S.region; ['epiSun', 'ascSun', 'corpusSun', 'usarComun', 'showKeys'].forEach(k => $('#' + k).checked = !!S[k]);
+  fillRegions(); $('#region').value = S.region; ['epiSun', 'ascSun', 'corpusSun', 'usarComun'].forEach(k => $('#' + k).checked = !!S[k]);
   $('#fs').value = S.fs; $('#ciclo').value = S.ciclo; $('#ttsRubricas').checked = !!S.ttsRubricas; if (window.TTSAPI) window.TTSAPI.fillVoices(); regionNote(); $('#setDlg').showModal();
 }
 $('#setBtn').onclick = openSettings;
 $('#sClose').onclick = () => $('#setDlg').close();
 $('#region').onchange = e => { S.region = e.target.value; Object.assign(S, preset(S.region)); regionNote(); ['epiSun', 'ascSun', 'corpusSun'].forEach(k => $('#' + k).checked = S[k]); saveS(); };
-['epiSun', 'ascSun', 'corpusSun', 'usarComun', 'showKeys'].forEach(k => $('#' + k).onchange = e => { S[k] = e.target.checked; saveS(); });
+['epiSun', 'ascSun', 'corpusSun', 'usarComun'].forEach(k => $('#' + k).onchange = e => { S[k] = e.target.checked; saveS(); });
 $('#fs').oninput = e => { S.fs = +e.target.value; saveS(); };
 $('#ciclo').onchange = e => { S.ciclo = e.target.value; saveS(); };
 
