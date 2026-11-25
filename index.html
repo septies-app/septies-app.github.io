@@ -1212,7 +1212,9 @@ const ORD = {
   menor: 'V. Bendigamos al Señor.\nR. Demos gracias a Dios.',
   comp: 'V. El Señor todopoderoso nos conceda una noche tranquila y una muerte santa.\nR. Amén.'
 };
-const redVR = s => s.replace(/(^|<br>)(V\.|R\.)/g, '$1<span class="r">$2</span>');
+const VR_SYM = { V: '℣', R: '℟' };
+const symVR = x => x.replace(/^(V|R)\.\s*/, (m, c) => `<span class="r">${VR_SYM[c]}</span> `);
+const redVR = s => s.replace(/(^|<br>)(V|R)\.\s*/g, (m, b, c) => `${b}<span class="r">${VR_SYM[c]}</span> `);
 const fixed = s => `<div class="t"><p>${redVR(esc(s).replace(/\n/g, '<br>'))}</p></div>`;
 
 // ---------- render de párrafos del libro ----------
@@ -1220,6 +1222,7 @@ function paraHTML(v, i) {
   const [k, h] = BOOK.vols()[v].p[i];
   let x = h.replace(/(^|\s)(\*|†)(?=\s|$)/g, '$1<i>$2</i>');
   if (k === 'l') return `<div class="lab">${x}</div>`;
+  if (k === 'r' && /^(V|R)\.\s/.test(x)) return `<p class="v">${symVR(x)}</p>`;   // versículos/responsorios marcados como rúbrica en el libro
   if (k === 'r') return `<p class="rb">${x}</p>`;
   if (k === 'a') return `<p class="an">${x.replace(/^(Ant\.(\s*\d\.)?)/, '<span class="r" style="color:var(--rubric)">$1</span>')}</p>`;
   if (k === 'ps') return `<p class="ps">${x}</p>`;
@@ -1227,7 +1230,7 @@ function paraHTML(v, i) {
   if (k === 'ep') return `<p class="ep">${x}</p>`;
   if (k === 'h' || k === 'hh') return `<p class="hd">${x}</p>`;
   if (k === 'b') return `<div class="gap"></div>`;
-  x = x.replace(/^(V\.|R\.)/, '<span style="color:var(--rubric)">$1</span>');
+  x = symVR(x);
   if (k === 't') return `<p class="t">${x}</p>`;
   return `<p class="v">${x}</p>`;
 }
@@ -1311,7 +1314,7 @@ function precesPH(ph, pl) {
   if (pl.type === 'pn') return PN_HTML;
   if (pl.type === 'pnIntro') return ph.replace(/\s*Padre nuestro\.?\s*(<\/p>)$/, '$1') + PN_HTML;
   if (pl.type === 'inline') return `<p class="v">${esc(pl.intro)}</p><p class="v">${RESP_M}${esc(pl.resp)}</p>`;
-  if (pl.type === 'resp') return ph.replace(/^(<p class="[^"]*">)(?:<span[^>]*>R\.<\/span>|R\.)?\s*/, '$1' + RESP_M);
+  if (pl.type === 'resp') return ph.replace(/^(<p class="[^"]*">)(?:<span[^>]*>(?:R\.|℟)<\/span>|R\.)?\s*/, '$1' + RESP_M);
   if (pl.type === 'dash') return ph.replace(/(<\/p>)$/, `<span class="r resp" data-say="${esc(pl.resp)}">℟</span>$1`);
   return ph;
 }
@@ -1361,7 +1364,7 @@ function renderIdx(v, idx, ctx, depth) {
     // Responsorio del Oficio de lectura: título y cita en rojo; V./R. → ℣/℟
     if (k !== 'b') {
       if ((k === 'v' || k === 't') && /^Responsorio\b/.test(t)) { inResp = true; ph = ph.replace(/^<p class="([^"]*)"/, '<p class="$1 resp-h"'); }
-      else if (inResp && /^(V\.|R\.)/.test(t)) ph = ph.replace(/<span[^>]*>(V|R)\.<\/span>\s*/, (m, c) => `<span class="r">${c === 'V' ? '℣' : '℟'}</span> `);
+      else if (inResp && /^(V\.|R\.)/.test(t)) { /* sigue el responsorio */ }
       else inResp = false;
     }
     let raw = BOOK.vols()[v].p[i][1];
@@ -1752,7 +1755,7 @@ const TTS = window.TTSAPI = (() => {
   }
   syn.addEventListener && syn.addEventListener('voiceschanged', fillVoices); fillVoices();
   const INSTR = /^(Si |Cuando |Donde |En los lugares|Se dice|Se omite|Se toma|Las antífonas|Los salmos|La oración|Todo como|O bien|Después del|Salmodia|Antífonas|Himno|El salmo|Y a continuación|Terminada|Al final|También puede|Puede|Hoy no|Del común|Del propio|Como en|Oración como)/i;
-  const isReading = t => /^(R\.|V\.)/.test(t) || /^(Comienza|Del?\s|De la |De los |De las |Lectura|Sermón|Homilía)/.test(t);
+  const isReading = t => /^(R\.|V\.|℣|℟)/.test(t) || /^(Comienza|Del?\s|De la |De los |De las |Lectura|Sermón|Homilía)/.test(t);
   function collect() {
     const els = [...$('#hour').querySelectorAll('h2,p,.lab,.ps-title,.ps-sub')].filter(e => {
       if (!e.offsetParent || e.closest('[hidden],.alt-tabs,.src,.note,.keys,.hint')) return false;
