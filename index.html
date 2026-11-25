@@ -1331,6 +1331,7 @@ function renderIdx(v, idx, ctx, depth) {
   let markVerse = false, inResp = false;
   for (let n = 0; n < idx.length; n++) {
     const i = idx[n], k = P[i][0], t = BOOK.txt(P[i][1]).trim();
+    if (k === 'r' && /^La conclusión de la Hora como en el Ordinario\.?$/.test(t)) continue;   // la conclusión ya se pone completa
     const header = k === 'ps' || ((k === 'v' || k === 'r') && CANT_EV.test(t));
     const antLine = /^(?:[^:]{3,60}:\s*)?Ant\.\s/.test(t) || /^Antífona\s+\d/.test(t);
     const numeral = /^[IVX]+$/.test(t) && ['v', 't', 'r', 'ti'].includes(k);
