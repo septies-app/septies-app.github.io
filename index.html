@@ -113,7 +113,7 @@ select,input[type=text],input[type=date]{background:var(--paper);border:1px soli
 .bk .ti{font-variant:small-caps;color:var(--muted);font-size:.86em;margin:.15rem 0 .45rem;letter-spacing:.02em}
 .bk .ep{font-style:italic;color:var(--muted);font-size:.85em;margin:0 0 .5rem}
 .bk .ti.ps-head,.bk .ep.ps-head{color:var(--rubric)}
-.bk .resp{margin-left:.3em}.bk .pn{margin-top:.3rem}
+.bk .resp{margin-left:.3em}.bk .resp-h{color:var(--rubric)}.bk .pn{margin-top:.3rem}
 .bk .hd{font-weight:600;text-align:center;margin:1.2rem 0 .4rem}
 .bk i{font-style:normal;color:var(--rubric)}
 .bk a{color:var(--rubric);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;cursor:pointer}
@@ -1324,7 +1324,7 @@ function renderIdx(v, idx, ctx, depth) {
     if (ps && ps.verses >= 4 && !ps.gloria && !ps.no) { const at = ps.at != null ? ps.at : html.length; html = html.slice(0, at) + GLORIA_HTML + html.slice(at); }
     ps = null;
   };
-  let markVerse = false;
+  let markVerse = false, inResp = false;
   for (let n = 0; n < idx.length; n++) {
     const i = idx[n], k = P[i][0], t = BOOK.txt(P[i][1]).trim();
     const header = k === 'ps' || ((k === 'v' || k === 'r') && CANT_EV.test(t));
@@ -1358,6 +1358,12 @@ function renderIdx(v, idx, ctx, depth) {
       if (pplan[i]) ph = precesPH(ph, pplan[i]);
     }
     if ((ctx.part === 'l1' || ctx.part === 'l2') && ph.startsWith('<p class="v">')) ph = ph.replace('<p class="v">', '<p class="t">');
+    // Responsorio del Oficio de lectura: título y cita en rojo; V./R. → ℣/℟
+    if (k !== 'b') {
+      if ((k === 'v' || k === 't') && /^Responsorio\b/.test(t)) { inResp = true; ph = ph.replace(/^<p class="([^"]*)"/, '<p class="$1 resp-h"'); }
+      else if (inResp && /^(V\.|R\.)/.test(t)) ph = ph.replace(/<span[^>]*>(V|R)\.<\/span>\s*/, (m, c) => `<span class="r">${c === 'V' ? '℣' : '℟'}</span> `);
+      else inResp = false;
+    }
     let raw = BOOK.vols()[v].p[i][1];
     // Las remisiones al Salterio («Martes de la semana II del Salterio») son sólo indicativas: texto, no enlace
     const autoFirst = (ctx.part === 'himno' || ctx.part === 'salmodia') && depth === 0;
@@ -1760,9 +1766,9 @@ const TTS = window.TTSAPI = (() => {
     return els;
   }
   function clean(t) {
-    t = t.replace(/(^|\n)\s*(V\.|R\.)\s*/g, '$1');
+    t = t.replace(/(^|\n)\s*(V\.|R\.|℣|℟)\s*/g, '$1');
     if (t === t.toUpperCase() && /[A-ZÁÉÍÓÚÑ]{3}/.test(t)) t = t.charAt(0) + t.slice(1).toLowerCase();   // las mayúsculas se deletrean
-    return t.replace(/\s+/g, ' ').replace(/(^|\s)[*†+](?=\s|$)/g, ' ').replace(/^(V\.|R\.)\s*/, '').replace(/^Ant\.\s*(\d\.)?\s*/, '')
+    return t.replace(/\s+/g, ' ').replace(/(^|\s)[*†+](?=\s|$)/g, ' ').replace(/^(V\.|R\.|℣|℟)\s*/, '').replace(/^Ant\.\s*(\d\.)?\s*/, '')
       .replace(/\bSal\b\.?/g, 'Salmo').replace(/\bcf\.\s*/gi, 'confróntese ').trim();
   }
   function chunks(t) {   // Chrome corta las frases muy largas: trozos de ~220 caracteres
